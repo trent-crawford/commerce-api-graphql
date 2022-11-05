@@ -1,0 +1,20 @@
+{
+    "name": "drupal/commerce_api_graphpql",
+    "type": "drupal-module",
+    "description": "An experimental GraphQL wrapper around drupal/commerce_api.",
+    "homepage": "https://github.com/trent-crawford/commerce-api-graphql",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "drupal/core": "^9.2 || ^10",
+        "drupal/commerce_api": "^1.0@beta"
+    },
+    "require-dev": {
+        "drupal/commerce_shipping": "^2.2",
+        "drupal/commerce_wishlist": "^3.0@beta",
+        "drupal/jsonapi_schema": "^1.0@alpha"
+    },
+    "conflict": {
+        "drupal/commerce_shipping": "<2.1"
+    },
+    "minimum-stability": "dev"
+}
