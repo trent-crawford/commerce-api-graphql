@@ -1,5 +1,5 @@
 {
-    "name": "drupal/commerce_api_graphpql",
+    "name": "drupal/commerce_api_graphql",
     "type": "drupal-module",
     "description": "An experimental GraphQL wrapper around drupal/commerce_api.",
     "homepage": "https://github.com/trent-crawford/commerce-api-graphql",
