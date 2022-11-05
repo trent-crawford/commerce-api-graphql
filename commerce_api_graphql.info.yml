@@ -1,0 +1,8 @@
+name: 'Commerce API GraphQL'
+type: module
+description: 'Provides an experimental GraphQL interface that wraps the existing commerce_api.'
+core_version_requirement: ^9.2 || ^10
+package: 'Commerce (web services)'
+dependencies:
+  - commerce_api:commerce_api
+
