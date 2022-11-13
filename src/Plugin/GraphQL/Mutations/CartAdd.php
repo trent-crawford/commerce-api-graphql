@@ -4,14 +4,12 @@ declare(strict_types = 1);
 
 namespace Drupal\commerce_api_graphql\Plugin\GraphQL\Mutations;
 
-use Drupal\commerce_api\Resource\CartAddResource;
 use Drupal\commerce_order\OrderStorage;
 use Drupal\commerce_store\Entity\StoreInterface;
-use Drupal\commerce_store\StoreStorage;
 use Drupal\commerce_store\StoreStorageInterface;
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Entity\EntityType;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Http\RequestStack;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Render\RendererInterface;
@@ -21,13 +19,10 @@ use Drupal\graphql\Plugin\GraphQL\Mutations\MutationPluginBase;
 use Drupal\graphql_core\GraphQL\EntityCrudOutputWrapper;
 use GraphQL\Type\Definition\ResolveInfo;
 use GuzzleHttp\ClientInterface;
-use GuzzleHttp\Exception\BadResponseException;
-use GuzzleHttp\Exception\ClientException;
-use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Cookie\CookieJar;
+use GuzzleHttp\Cookie\CookieJarInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
-use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
+use Symfony\Component\HttpFoundation\Session\SessionInterface;
 
 /**
  * Mutation to add items to the cart.
@@ -44,9 +39,6 @@ use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
  * resolver:
  * @see Drupal\commerce_api\Resolvers\CurrentStoreHeaderResolver.
  *
- * This currently only adds as an anonymous user as the
- * PHP session cookie is not being passed in the request.
- *
  * @GraphQLMutation(
  *   id = "cart_add",
  *   secure = false,
@@ -59,7 +51,7 @@ use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
  */
 class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterface {
 
-  const END_POINT = '/jsonapi/cart/add?include';
+  const END_POINT = '/jsonapi/cart/add';
   const METHOD = 'POST';
 
   public function __construct(
@@ -68,7 +60,9 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
     $plugin_definition,
     protected RendererInterface $renderer,
     protected ClientInterface $http_client,
-    protected EntityTypeManagerInterface $entityTypeManager
+    protected EntityTypeManagerInterface $entityTypeManager,
+    protected RequestStack $requestStack,
+    protected SessionInterface $session
   )
   {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
@@ -82,7 +76,9 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
       $plugin_definition,
       $container->get('renderer'),
       $container->get('http_client'),
-      $container->get('entity_type.manager')
+      $container->get('entity_type.manager'),
+      $container->get('request_stack'),
+      $container->get('session')
     );
   }
   /**
@@ -101,6 +97,7 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
               'Commerce-Cart-Token' => $args['commerceCartToken'],
               'Commerce-Current-Store' => $this->getStoreUuid($args)
             ],
+            'cookies' => $this->getCookieJarWithSessionCookie(),
             // Ensure http errors are enabled so we don't have to confirm
             // success.
             'http_errors' => true,
@@ -134,6 +131,18 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
     });
   }
 
+  /**
+   * Get a cookie jar with the session cookie.
+   *
+   * @return CookieJarInterface
+   */
+  protected function getCookieJarWithSessionCookie(): CookieJarInterface {
+   $request = $this->requestStack->getCurrentRequest();
+    return CookieJar::fromArray(
+      [$this->session->getName() => $this->session->getId()],
+      $request?->getHost()
+    );
+  }
   /**
    * Get the order ID from the decoded response.
    *
