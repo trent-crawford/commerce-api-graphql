@@ -5,21 +5,28 @@ declare(strict_types = 1);
 namespace Drupal\commerce_api_graphql\Plugin\GraphQL\Mutations;
 
 use Drupal\commerce_api\Resource\CartAddResource;
+use Drupal\commerce_order\OrderStorage;
 use Drupal\commerce_store\Entity\StoreInterface;
 use Drupal\commerce_store\StoreStorage;
 use Drupal\commerce_store\StoreStorageInterface;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityType;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Render\RendererInterface;
+use Drupal\Core\Url;
 use Drupal\graphql\GraphQL\Execution\ResolveContext;
 use Drupal\graphql\Plugin\GraphQL\Mutations\MutationPluginBase;
 use Drupal\graphql_core\GraphQL\EntityCrudOutputWrapper;
 use GraphQL\Type\Definition\ResolveInfo;
 use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Psr7\Request;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
+use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
 
 /**
  * Mutation to add items to the cart.
@@ -36,6 +43,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * resolver:
  * @see Drupal\commerce_api\Resolvers\CurrentStoreHeaderResolver.
  *
+ * This currently only adds as an anonymous user as the
+ * PHP session cookie is not being passed in the request.
+ *
+ * todo - Create input types.
+ *
  * @GraphQLMutation(
  *   id = "cart_add",
  *   secure = false,
@@ -44,10 +56,10 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   arguments = {
  *      "commerceCartToken" = "String!",
  *      "type" = "String!",
- *      "id" = "String!"
+ *      "id" = "String!",
  *      "quantity" = "String!",
  *      "combine" = "Boolean!",
- *      "store" = "String!",
+ *      "store" = "String",
  *   }
  * )
  */
@@ -87,7 +99,7 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
       try {
         $response = $this->http_client->request(
           static::METHOD,
-          static::END_POINT,
+          Url::fromUserInput(static::END_POINT,['absolute' =>true])->toString(),
           [
             'headers' => [
               'Accept' => 'application/vnd.api+json',
@@ -95,11 +107,13 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
               'Commerce-Cart-Token' => $args['commerceCartToken'],
               'Commerce-Current-Store' => $this->getStoreUuid($args)
             ],
-            // Disable http_errors so that we can extract information about
-            // potential failures from the responses themselves.
-            'http_errors' => false,
-            // Avoids hard to debug errors.
+            // Ensure http errors are enabled so we don't have to confirm
+            // success.
+            'http_errors' => true,
+            // Avoid hard to debug errors.
             'allow_redirects' => false,
+            // todo Make configurable. Verify = false required for local dev.
+            'verify' => false,
             'json' => (object)[
               'data' => [(object)[
                 'type' => $args['type'],
@@ -110,18 +124,31 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
                 ]
               ]
               ]
-            ]
+            ],
           ]
         );
         $response_content = $response->getBody()->getContents();
-        // todo Finalize
-        // Extract cart ID from the response and load the entity.
-        // Extract any errors and return those in the output wrapper.
+        $response_decoded = json_decode($response_content,true,512,JSON_THROW_ON_ERROR);
+        /** @var OrderStorage $order_storage */
+        $order_storage = $this->entityTypeManager->getStorage('commerce_order');
+        $order_uuid = reset($response_decoded['included'])['id'];
+        $carts = $order_storage->loadByProperties(['uuid' => $order_uuid]);
+        $cart = reset($carts);
+        assert($cart instanceof EntityInterface);
+        return new EntityCrudOutputWrapper($cart, NULL, []);
+      }
+      catch( ClientExceptionInterface $e){
+        // todo Improve exception handling.
+        $foo = 'bar';
 
-        return new EntityCrudOutputWrapper($cart, NULL, $errors);
+      }
+      catch (ServerExceptionInterface $e) {
+        $foo = 'foobar';
+      }
+      catch (GuzzleException $e) {
+        $foo = 'foobarfoo';
       }
       catch (\Exception $e) {
-        // todo Improve exception handling.
         return new EntityCrudOutputWrapper(NULL, NULL, [$e->getMessage()]);
       }
     });
