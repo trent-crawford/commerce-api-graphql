@@ -21,6 +21,7 @@ use Drupal\graphql\Plugin\GraphQL\Mutations\MutationPluginBase;
 use Drupal\graphql_core\GraphQL\EntityCrudOutputWrapper;
 use GraphQL\Type\Definition\ResolveInfo;
 use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Exception\BadResponseException;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Psr7\Request;
@@ -54,18 +55,13 @@ use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
  *   name = "cartAdd",
  *   type = "EntityCrudOutput",
  *   arguments = {
- *      "commerceCartToken" = "String!",
- *      "type" = "String!",
- *      "id" = "String!",
- *      "quantity" = "String!",
- *      "combine" = "Boolean!",
- *      "store" = "String",
+ *      "input" = "AddCartInput"
  *   }
  * )
  */
 class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterface {
 
-  const END_POINT = '/jsonapi/cart/add?include=order_id';
+  const END_POINT = '/jsonapi/cart/add?include';
   const METHOD = 'POST';
 
   public function __construct(
@@ -99,7 +95,7 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
       try {
         $response = $this->http_client->request(
           static::METHOD,
-          Url::fromUserInput(static::END_POINT,['absolute' =>true])->toString(),
+          Url::fromUserInput(static::END_POINT, ['absolute' => true])->toString(),
           [
             'headers' => [
               'Accept' => 'application/vnd.api+json',
@@ -116,42 +112,33 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
             'verify' => false,
             'json' => (object)[
               'data' => [(object)[
-                'type' => $args['type'],
-                'id' => $args['id'],
+                'type' => $args['input']['entityType'],
+                'id' => $args['input']['id'],
                 'meta' => (object)[
-                  'quantity' => $args['quantity'],
-                  'combine' => $args['combine'],
+                  'quantity' => $args['input']['meta']['quantity'],
+                  'combine' => $args['input']['meta']['combine'],
                 ]
               ]
               ]
             ],
           ]
-        );
-        $response_content = $response->getBody()->getContents();
-        $response_decoded = json_decode($response_content,true,512,JSON_THROW_ON_ERROR);
-        /** @var OrderStorage $order_storage */
-        $order_storage = $this->entityTypeManager->getStorage('commerce_order');
-        $order_uuid = reset($response_decoded['included'])['id'];
-        $carts = $order_storage->loadByProperties(['uuid' => $order_uuid]);
-        $cart = reset($carts);
-        assert($cart instanceof EntityInterface);
-        return new EntityCrudOutputWrapper($cart, NULL, []);
-      }
-      catch( ClientExceptionInterface $e){
-        // todo Improve exception handling.
-        $foo = 'bar';
-
-      }
-      catch (ServerExceptionInterface $e) {
-        $foo = 'foobar';
-      }
-      catch (GuzzleException $e) {
-        $foo = 'foobarfoo';
-      }
-      catch (\Exception $e) {
+          );
+          $response_content = $response->getBody()->getContents();
+          $response_decoded = json_decode($response_content, true, 512, JSON_THROW_ON_ERROR);
+          /** @var OrderStorage $order_storage */
+          $order_storage = $this->entityTypeManager->getStorage('commerce_order');
+          $cart = $order_storage->load($this->getOrderId($response_decoded));
+          assert($cart instanceof EntityInterface);
+          return new EntityCrudOutputWrapper($cart, NULL, []);
+      } catch (\Exception $e) {
         return new EntityCrudOutputWrapper(NULL, NULL, [$e->getMessage()]);
       }
     });
+  }
+
+  protected function getOrderId(array $response): null|int|string {
+    [$order_item ] = $response['data'];
+    return $order_item['relationships']['order_id']['data']['meta']['drupal_internal__target_id'] ?? NULL;
   }
 
 
@@ -161,7 +148,7 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
     // default store rather than the current store. Otherwise the incoming
     // request to the mutation would need to have headers set to resolve the
     // store, which we wish to avoid.
-    return $args['store'] ?? $this->getDefaultStore()->uuid();
+    return $args['input']['store'] ?? $this->getDefaultStore()->uuid();
   }
 
 
