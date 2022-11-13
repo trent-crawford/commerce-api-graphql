@@ -47,15 +47,13 @@ use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
  * This currently only adds as an anonymous user as the
  * PHP session cookie is not being passed in the request.
  *
- * todo - Create input types.
- *
  * @GraphQLMutation(
  *   id = "cart_add",
  *   secure = false,
  *   name = "cartAdd",
  *   type = "EntityCrudOutput",
  *   arguments = {
- *      "input" = "AddCartInput"
+ *      "input" = "AddCartInput!"
  *   }
  * )
  */
@@ -136,12 +134,36 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
     });
   }
 
-  protected function getOrderId(array $response): null|int|string {
-    [$order_item ] = $response['data'];
-    return $order_item['relationships']['order_id']['data']['meta']['drupal_internal__target_id'] ?? NULL;
+  /**
+   * Get the order ID from the decoded response.
+   *
+   * @param array $decoded_response
+   *   Decoded response..
+   * @return int|string|null
+   *   The order ID.
+   * @throws \Exception
+   *   Exception if the order ID cannot be found.
+   */
+  protected function getOrderId(array $decoded_response): null|int|string {
+    [$order_item ] = $decoded_response['data'];
+    $order_id =  $order_item['relationships']['order_id']['data']['meta']['drupal_internal__target_id'] ?? NULL;
+    if ($order_id === NULL) {
+      throw new \Exception("The order ID was not not returned from the JSON api.");
+    }
+    return $order_id;
   }
 
 
+  /**
+   * Get the store UUID.
+   *
+   * @param array $args
+   *   Args.
+   * @return string
+   *   Uuid.
+   * @throws \Exception
+   *   The store Uuid cannot be found.
+   */
   protected function getStoreUuid(array $args): string {
     // We don't attempt to load the store to validate it. We let the commerce
     // api do all validation.  If the store is not defined we use the
@@ -152,6 +174,12 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
   }
 
 
+  /**
+   * Get the default store.
+   *
+   * @return StoreInterface
+   *   Store.
+   */
   protected function getDefaultStore(): StoreInterface {
     /** @var StoreStorageInterface $store_storage */
     $store_storage = $this->entityTypeManager->getStorage('commerce_store');
