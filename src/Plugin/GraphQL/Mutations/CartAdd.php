@@ -94,7 +94,7 @@ class CartAdd extends MutationPluginBase implements ContainerFactoryPluginInterf
             'headers' => [
               'Accept' => 'application/vnd.api+json',
               'Content-Type' => 'application/vnd.api+json',
-              'Commerce-Cart-Token' => $args['commerceCartToken'],
+              'Commerce-Cart-Token' => $args['input']['commerceCartToken'],
               'Commerce-Current-Store' => $this->getStoreUuid($args)
             ],
             'cookies' => $this->getCookieJarWithSessionCookie(),
